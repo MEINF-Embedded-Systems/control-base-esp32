@@ -6,8 +6,11 @@ Repository for the control base of the game board project, using the ESP32 with 
 
 ### Prerequisites
 To work with this project you need to install the following VSCode extensions:
-- [PlatformIO IDE](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide)
-- [Wokwi Simulator](https://marketplace.visualstudio.com/items?itemName=Wokwi.wokwi-vscode)
+- [PlatformIO IDE](https://marketplace.visualstudio.com/items?itemName=platformio.platformio-ide): 
+    Quick start guide can be found [here](https://docs.platformio.org/en/latest/integration/ide/vscode.html#quick-start).
+
+- [Wokwi Simulator](https://marketplace.visualstudio.com/items?itemName=Wokwi.wokwi-vscode):
+    Quick start guide can be found [here](https://docs.wokwi.com/vscode/getting-started/).
 
 ### Import the project
 
@@ -18,7 +21,6 @@ To work with this project you need to install the following VSCode extensions:
 ### Install the dependencies
 Dependencies will be automatically installed when you build the project for the first time, if not, you can install them manually:
 - Click on the PlatformIO icon in the left sidebar. Or the home icon in the bottom bar (appears after starting the extension).
-![](image.png)
 
 - Click on the "Library" button in the PlatformIO sidebar.
 - Search for the following libraries and install them:
