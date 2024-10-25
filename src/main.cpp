@@ -135,7 +135,7 @@ void WiFiTask(void *pvParameters)
   {
     Serial.print("Connecting to WiFi...");
     WiFi.begin(ssid, password);
-    delay(2000);
+    vTaskDelay(2000);
   }
 
   Serial.println("WiFi connected");
@@ -165,10 +165,10 @@ void MQTTReconnectTask(void *pvParameters)
       else
       {
         Serial.print("Failed to connect, retrying in 5 seconds...");
-        delay(5000); // Retry after 5 seconds
+        vTaskDelay(5000); // Retry after 5 seconds
       }
     }
-    delay(1000); // Check connection status every second
+    vTaskDelay(1000); // Check connection status every second
   }
 }
 
@@ -181,7 +181,7 @@ void MQTTSubscribeTask(void *pvParameters)
     {
       client.loop();
     }
-    delay(10); // Small delay to avoid task overflow
+    vTaskDelay(10); // Small delay to avoid task overflow
   }
 }
 
@@ -195,7 +195,7 @@ void MQTTPublishTask(void *pvParameters)
       client.publish("test/topic", "I'm ESP32");
       Serial.println("Message published");
     }
-    delay(10000); // Publish every 10 seconds
+    vTaskDelay(10000); // Publish every 10 seconds
   }
 }
 
