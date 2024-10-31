@@ -5,6 +5,7 @@
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/queue.h>
 
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -36,10 +37,12 @@ void MQTTPublishTask(void *pvParameters);
 
 // Helper functions
 void mqttCallback(char *topic, byte *payload, unsigned int length);
+void splitMessage(String sentence, String &message1, String &message2);
+void printToLCD(LiquidCrystal_I2C &lcd, String message);
 
 // WiFi and MQTT
-const char *ssid = "Redmi Note 12 Pro 5G";
-const char *password = "AEB33014";
+const char *ssid = "Wokwi-GUEST";
+const char *password = "";
 const char *mqtt_server = "test.mosquitto.org";
 
 // MQTT client
@@ -47,11 +50,16 @@ const char *client_ID = "ESP32";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-char message[16];
+// LCD message
+const int maxMessages = 10;
+const int maxLength = 32; // LCD can display 16 characters per row
+QueueHandle_t queue;
 
-void setup()
-{
+bool startTime = true;
+
+void setup() {
   Serial.begin(115200);
+  queue = xQueueCreate(maxMessages, sizeof(char) * maxLength + 1);
 
   Wire.begin(SDA_PIN, SCL_PIN);
   lcd.init();
@@ -73,72 +81,69 @@ void setup()
   // Set up MQTT server
   client.setServer(mqtt_server, 1883);
   client.setCallback(mqttCallback);
+
+  // Let FreeRTOS take over
+  vTaskDelete(NULL);
 }
 
-void loop()
-{
+void loop() {
   // Empty. Tasks are running independently.
 }
 
 // Task functions
-void displayTask(void *pvParameters)
-{
-  while (true)
-  {
+void displayTask(void *pvParameters) {
+  char msg[maxLength + 1];
+  while (true) {
     // Display message on LCD
-    if (message != NULL)
-    {
-      lcd.setCursor(0, 0);
-      lcd.print(message);
-      // remove message from var
-      message[0] = '\0';
-      for (int i = 1; i < 16; i++)
-      {
-        message[i] = ' ';
-      }
-      vTaskDelay(5000);
+    if (uxQueueMessagesWaiting(queue) > 0) {
+      xQueueReceive(queue, &msg, 0);
+      // Serial.println("Message received from queue: " + String(msg));
+      printToLCD(lcd, msg);
+    }
+    else {
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("---");
+      lcd.print("Waiting msg...");
     }
+    vTaskDelay(pdMS_TO_TICKS(startTime ? 500 : 2000)); // Small delay to avoid task overflow
   }
 }
 
-void buzzTask(void *pvParameters)
-{
-  while (true)
-  {
-    // tone(BUZZ_PIN, 1000);
-    // vTaskDelay(1000);
+void buzzTask(void *pvParameters) {
+  while (true) {
+    // tone(BUZZ_PIN, 500);
+    // vTaskDelay(pdMS_TO_TICKS(2000));
 
     // noTone(BUZZ_PIN);
-    // vTaskDelay(1000);
+    // vTaskDelay(pdMS_TO_TICKS(2000));
   }
 }
 
-void ledTask(void *pvParameters)
-{
-  while (true)
-  {
+void ledTask(void *pvParameters) {
+  while (true) {
     digitalWrite(LED_PIN, HIGH);
-    vTaskDelay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
     digitalWrite(LED_PIN, LOW);
-    vTaskDelay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
 // Wi-Fi Task: Handles connection to Wi-Fi
-void WiFiTask(void *pvParameters)
-{
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    Serial.print("Connecting to WiFi...");
+void WiFiTask(void *pvParameters) {
+  startTime = true;
+  char msg[maxLength + 1];
+  while (WiFi.status() != WL_CONNECTED) {
+    sprintf(msg, "Connecting to Wi-Fi...");
+    Serial.print(msg);
+    xQueueSend(queue, &msg, portMAX_DELAY);
     WiFi.begin(ssid, password);
-    vTaskDelay(2000);
+    vTaskDelay(pdMS_TO_TICKS(2000));
   }
 
-  Serial.println("WiFi connected");
+  sprintf(msg, "Connected to Wi-Fi!");
+  Serial.println(msg);
+  xQueueSend(queue, &msg, portMAX_DELAY);
 
   // Start MQTT tasks only after Wi-Fi is connected
   xTaskCreatePinnedToCore(MQTTReconnectTask, "MQTTReconnectTask", 4000, NULL, 1, NULL, 1);
@@ -150,71 +155,100 @@ void WiFiTask(void *pvParameters)
 }
 
 // MQTT Reconnect Task: Reconnects to the MQTT broker if disconnected
-void MQTTReconnectTask(void *pvParameters)
-{
-  while (true)
-  {
-    if (!client.connected())
-    {
-      Serial.println("Attempting MQTT connection...");
-      if (client.connect(client_ID))
-      {
-        Serial.println("MQTT connected");
+void MQTTReconnectTask(void *pvParameters) {
+  startTime = true;
+  char msg[maxLength + 1];
+  while (true) {
+    if (!client.connected()) {
+      sprintf(msg, "Attempting MQTT connection...");
+      Serial.println(msg);
+      xQueueSend(queue, &msg, portMAX_DELAY);
+      if (client.connect(client_ID)) {
+        sprintf(msg, "Connected to MQTT!");
+        Serial.println(msg);
+        xQueueSend(queue, &msg, portMAX_DELAY);
         client.subscribe("test/server"); // Subscribe to a test topic
       }
-      else
-      {
-        Serial.print("Failed to connect, retrying in 5 seconds...");
-        vTaskDelay(5000); // Retry after 5 seconds
+      else {
+        sprintf(msg, "Failed to connect");
+        Serial.println(String(msg) + ". Retrying in 5 seconds");
+        xQueueSend(queue, &msg, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(5000)); // Retry after 5 seconds
       }
     }
-    vTaskDelay(1000); // Check connection status every second
+    startTime = false;
+    vTaskDelay(pdMS_TO_TICKS(1000)); // Check connection status every second
   }
 }
 
 // MQTT Subscribe Task: Waits for incoming messages
-void MQTTSubscribeTask(void *pvParameters)
-{
-  while (true)
-  {
-    if (client.connected())
-    {
-      client.loop();
-    }
-    vTaskDelay(10); // Small delay to avoid task overflow
+void MQTTSubscribeTask(void *pvParameters) {
+  while (true) {
+    if (client.connected()) client.loop();
+    vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to avoid task overflow
   }
 }
 
 // MQTT Publish Task: Publishes a message every 10 seconds
-void MQTTPublishTask(void *pvParameters)
-{
-  while (true)
-  {
-    if (client.connected())
-    {
+void MQTTPublishTask(void *pvParameters) {
+  while (true) {
+    if (client.connected()) {
       client.publish("test/topic", "I'm ESP32");
-      Serial.println("Message published");
+      Serial.println("Message published to test/topic: I'm ESP32");
     }
-    vTaskDelay(10000); // Publish every 10 seconds
+    vTaskDelay(pdMS_TO_TICKS(10000)); // Publish every 10 seconds
   }
 }
 
 // Callback function to handle incoming messages
-void mqttCallback(char *topic, byte *payload, unsigned int length)
-{
-  Serial.print("Message arrived on topic: ");
-  Serial.println(topic);
+void mqttCallback(char *topic, byte *payload, unsigned int length) {
+  Serial.println("Message arrived on topic: " + String(topic));
 
   // Write the message to the message buffer to display on the LCD
-  for (int i = 0; i < 16; i++)
-  {
-    message[i] = (char)payload[i];
-  }
+  char msg[length + 1];
+  if (length > maxLength)
+    memcpy(msg, "Message too long!", length = 17);
+  else
+    memcpy(msg, payload, length);
+  msg[length] = '\0'; // Null-terminate the message
+  xQueueSend(queue, &msg, portMAX_DELAY);
+}
 
-  Serial.print("Message: ");
-  for (int i = 0; i < length; i++)
-  {
-    Serial.print((char)payload[i]);
+void splitMessage(String sentence, String &message1, String &message2) {
+  // Maximum characters per row
+  const int maxChars = 16;
+
+  // Clear the output messages
+  message1 = "";
+  message2 = "";
+
+  // Check if the sentence fits in the first row
+  if (sentence.length() <= maxChars) {
+    message1 = sentence; // Fits entirely in the first row
   }
-  Serial.println();
+  else {
+    // Find the last space within the maximum character limit
+    int splitIndex = sentence.lastIndexOf(' ', maxChars);
+    if (splitIndex == -1) {
+      // If there are no spaces, just take the first part
+      message1 = sentence.substring(0, maxChars);
+      message2 = sentence.substring(maxChars);
+    }
+    else {
+      // Split at the last space found within the limit
+      message1 = sentence.substring(0, splitIndex);
+      message2 = sentence.substring(splitIndex + 1); // Skip the space
+    }
+  }
+}
+
+void printToLCD(LiquidCrystal_I2C &lcd, String msg) {
+  String message1;
+  String message2;
+  splitMessage(msg, message1, message2);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(message1);
+  lcd.setCursor(0, 1);
+  lcd.print(message2);
 }
