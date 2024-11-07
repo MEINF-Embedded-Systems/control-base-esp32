@@ -87,3 +87,6 @@ sdkconfig.old
 *.pid
 *.seed
 *.pid.lock
+
+# Wifi credentials
+config.h
