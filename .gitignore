@@ -89,4 +89,4 @@ sdkconfig.old
 *.pid.lock
 
 # Wifi credentials
-config.h
+src/config.h
