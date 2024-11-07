@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "config.h"
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
@@ -8,6 +9,7 @@
 
 #include <WiFi.h>
 #include <PubSubClient.h>
+
 
 // Pin definitions
 const int SDA_PIN = 32;
@@ -38,8 +40,6 @@ void MQTTPublishTask(void *pvParameters);
 void mqttCallback(char *topic, byte *payload, unsigned int length);
 
 // WiFi and MQTT
-const char *ssid = "Redmi Note 12 Pro 5G";
-const char *password = "AEB33014";
 const char *mqtt_server = "test.mosquitto.org";
 
 // MQTT client
