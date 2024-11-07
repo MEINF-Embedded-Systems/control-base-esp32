@@ -26,6 +26,14 @@ Dependencies will be automatically installed when you build the project for the 
 - Search for the following libraries and install them:
   - `LiquidCrystal_I2C` by Frank de Brabander
 
+### Wifi Configuration
+- When cloning the project, a file `src/config_example.h` will be created.
+- Create a copy of this file and rename it to `src/config.h`.
+- Fill in the `WIFI_SSID` and `WIFI_PASSWORD` fields with your wifi credentials.
+- This new file is already included in the `.gitignore` file, so it will not be commited to the repository.
+- If you want to use the Wokwi Simulator, you can use the following credentials:
+    - `"Wokwi-GUEST"`
+    - `""`
 
 ## Running the project
 - Click on the "Build" button (checkmark icon) to compile your project.
