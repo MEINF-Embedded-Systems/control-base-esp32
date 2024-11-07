@@ -55,11 +55,15 @@ const int maxMessages = 10;
 const int maxLength = 32; // LCD can display 16 characters per row
 QueueHandle_t queue;
 
-bool startTime = true;
+// Define a struct to hold the message and display time
+typedef struct {
+  char message[maxLength + 1];
+  int timeMs = 200;
+} Message;
 
 void setup() {
   Serial.begin(115200);
-  queue = xQueueCreate(maxMessages, sizeof(char) * maxLength + 1);
+  queue = xQueueCreate(maxMessages, sizeof(Message));
 
   Wire.begin(SDA_PIN, SCL_PIN);
   lcd.init();
@@ -92,20 +96,20 @@ void loop() {
 
 // Task functions
 void displayTask(void *pvParameters) {
-  char msg[maxLength + 1];
+  Message msg;
   while (true) {
     // Display message on LCD
     if (uxQueueMessagesWaiting(queue) > 0) {
       xQueueReceive(queue, &msg, 0);
-      // Serial.println("Message received from queue: " + String(msg));
-      printToLCD(lcd, msg);
+      Serial.println("Message received from queue: " + String(msg.message) + " for " + String(msg.timeMs) + "ms");
+      printToLCD(lcd, msg.message);
     }
     else {
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Waiting msg...");
     }
-    vTaskDelay(pdMS_TO_TICKS(startTime ? 500 : 2000)); // Small delay to avoid task overflow
+    vTaskDelay(pdMS_TO_TICKS(msg.timeMs)); // Small delay to avoid task overflow
   }
 }
 
@@ -131,18 +135,17 @@ void ledTask(void *pvParameters) {
 
 // Wi-Fi Task: Handles connection to Wi-Fi
 void WiFiTask(void *pvParameters) {
-  startTime = true;
-  char msg[maxLength + 1];
+  Message msg;
   while (WiFi.status() != WL_CONNECTED) {
-    sprintf(msg, "Connecting to Wi-Fi...");
-    Serial.print(msg);
+    sprintf(msg.message, "Connecting to Wi-Fi...");
+    Serial.print(msg.message);
     xQueueSend(queue, &msg, portMAX_DELAY);
     WiFi.begin(ssid, password);
     vTaskDelay(pdMS_TO_TICKS(2000));
   }
 
-  sprintf(msg, "Connected to Wi-Fi!");
-  Serial.println(msg);
+  sprintf(msg.message, "Connected to Wi-Fi!");
+  Serial.println(msg.message);
   xQueueSend(queue, &msg, portMAX_DELAY);
 
   // Start MQTT tasks only after Wi-Fi is connected
@@ -156,27 +159,25 @@ void WiFiTask(void *pvParameters) {
 
 // MQTT Reconnect Task: Reconnects to the MQTT broker if disconnected
 void MQTTReconnectTask(void *pvParameters) {
-  startTime = true;
-  char msg[maxLength + 1];
+  Message msg;
   while (true) {
     if (!client.connected()) {
-      sprintf(msg, "Attempting MQTT connection...");
-      Serial.println(msg);
+      sprintf(msg.message, "Attempting MQTT connection...");
+      Serial.println(msg.message);
       xQueueSend(queue, &msg, portMAX_DELAY);
       if (client.connect(client_ID)) {
-        sprintf(msg, "Connected to MQTT!");
-        Serial.println(msg);
+        sprintf(msg.message, "Connected to MQTT!");
+        Serial.println(msg.message);
         xQueueSend(queue, &msg, portMAX_DELAY);
         client.subscribe("test/server"); // Subscribe to a test topic
       }
       else {
-        sprintf(msg, "Failed to connect");
-        Serial.println(String(msg) + ". Retrying in 5 seconds");
+        sprintf(msg.message, "Failed to connect");
+        Serial.println(String(msg.message) + ". Retrying in 5 seconds");
         xQueueSend(queue, &msg, portMAX_DELAY);
         vTaskDelay(pdMS_TO_TICKS(5000)); // Retry after 5 seconds
       }
     }
-    startTime = false;
     vTaskDelay(pdMS_TO_TICKS(1000)); // Check connection status every second
   }
 }
@@ -205,12 +206,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   Serial.println("Message arrived on topic: " + String(topic));
 
   // Write the message to the message buffer to display on the LCD
-  char msg[length + 1];
+  Message msg;
   if (length > maxLength)
-    memcpy(msg, "Message too long!", length = 17);
+    memcpy(msg.message, "Message too long!", length = 17);
   else
-    memcpy(msg, payload, length);
-  msg[length] = '\0'; // Null-terminate the message
+    memcpy(msg.message, payload, length);
+  msg.message[length] = '\0'; // Null-terminate the message
+  msg.timeMs = 2000; // Display for 2 seconds
   xQueueSend(queue, &msg, portMAX_DELAY);
 }
 
