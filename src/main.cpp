@@ -43,7 +43,7 @@ void splitMessage(String sentence, String &message1, String &message2);
 void printToLCD(LiquidCrystal_I2C &lcd, String message);
 
 // WiFi and MQTT
-const char *mqtt_server = "test.mosquitto.org";
+const char *mqtt_server = "192.168.90.140";
 
 // MQTT client
 const char *client_ID = "ESP32";
@@ -101,7 +101,6 @@ void displayTask(void *pvParameters) {
     // Display message on LCD
     if (uxQueueMessagesWaiting(queue) > 0) {
       xQueueReceive(queue, &msg, 0);
-      Serial.println("Message received from queue: " + String(msg.message) + " for " + String(msg.timeMs) + "ms");
       printToLCD(lcd, msg.message);
     }
     else {
