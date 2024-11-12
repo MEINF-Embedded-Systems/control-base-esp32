@@ -41,10 +41,11 @@ void MQTTPublishTask(void *pvParameters);
 // Helper functions
 void mqttCallback(char *topic, byte *payload, unsigned int length);
 void splitMessage(String sentence, String &message1, String &message2);
-void printToLCD(LiquidCrystal_I2C &lcd, String message);
+void printToLCD(LiquidCrystal_I2C &lcd, String msgTop, String msgDown);
 
 // WiFi and MQTT
-const char *mqtt_server = "test.mosquitto.org";
+const char *mqtt_server = "192.168.1.131";
+unsigned int mqtt_port = 1883;
 
 // MQTT client
 const char *client_ID = "ESP32";
@@ -53,14 +54,19 @@ PubSubClient client(espClient);
 
 // LCD message
 const int maxMessages = 10;
-const int maxLength = 32; // LCD can display 16 characters per row
+const int maxLength = 16; // LCD can display 16 characters per row
 QueueHandle_t queue;
 
 // Define a struct to hold the message and display time
 typedef struct {
-  char message[maxLength + 1];
-  int timeMs = 200;
+  char top[maxLength + 1];
+  char down[maxLength + 1];
+  int timeMs = 500;
 } Message;
+
+String player_id = "1";
+String lcd_topic = "game/players/" + player_id + "/components/lcd";
+String connection_topic = "game/players/" + player_id + "/connection";
 
 void setup() {
   Serial.begin(115200);
@@ -84,7 +90,7 @@ void setup() {
   xTaskCreatePinnedToCore(WiFiTask, "WiFiTask", 4000, NULL, 1, NULL, 0);
 
   // Set up MQTT server
-  client.setServer(mqtt_server, 1883);
+  client.setServer(mqtt_server, mqtt_port);
   client.setCallback(mqttCallback);
 
   // Let FreeRTOS take over
@@ -97,14 +103,12 @@ void loop() {
 
 // Task functions
 void displayTask(void *pvParameters) {
-  client.subscribe("game/players/1/components/lcd");
   Message msg;
   while (true) {
     // Display message on LCD
     if (uxQueueMessagesWaiting(queue) > 0) {
       xQueueReceive(queue, &msg, 0);
-      Serial.println("Message received from queue: " + String(msg.message) + " for " + String(msg.timeMs) + "ms");
-      printToLCD(lcd, msg.message);
+      printToLCD(lcd, msg.top, msg.down);
     }
     else {
       lcd.clear();
@@ -139,21 +143,21 @@ void ledTask(void *pvParameters) {
 void WiFiTask(void *pvParameters) {
   Message msg;
   while (WiFi.status() != WL_CONNECTED) {
-    sprintf(msg.message, "Connecting to Wi-Fi...");
-    Serial.print(msg.message);
+    sprintf(msg.top, "Connecting to Wi-Fi...");
+    Serial.println(msg.top);
     xQueueSend(queue, &msg, portMAX_DELAY);
     WiFi.begin(ssid, password);
     vTaskDelay(pdMS_TO_TICKS(2000));
   }
 
-  sprintf(msg.message, "Connected to Wi-Fi!");
-  Serial.println(msg.message);
+  sprintf(msg.top, "Connected to Wi-Fi!");
+  Serial.println(msg.top);
   xQueueSend(queue, &msg, portMAX_DELAY);
 
   // Start MQTT tasks only after Wi-Fi is connected
   xTaskCreatePinnedToCore(MQTTReconnectTask, "MQTTReconnectTask", 4000, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(MQTTSubscribeTask, "MQTTSubscribeTask", 4000, NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(MQTTPublishTask, "MQTTPublishTask", 4000, NULL, 1, NULL, 1);
+  // xTaskCreatePinnedToCore(MQTTPublishTask, "MQTTPublishTask", 4000, NULL, 1, NULL, 1);
 
   // Delete WiFiTask to free resources
   vTaskDelete(NULL); // NULL deletes the current task
@@ -164,18 +168,19 @@ void MQTTReconnectTask(void *pvParameters) {
   Message msg;
   while (true) {
     if (!client.connected()) {
-      sprintf(msg.message, "Attempting MQTT connection...");
-      Serial.println(msg.message);
+      sprintf(msg.top, "Attempting MQTT connection...");
+      Serial.println(msg.top);
       xQueueSend(queue, &msg, portMAX_DELAY);
       if (client.connect(client_ID)) {
-        sprintf(msg.message, "Connected to MQTT!");
-        Serial.println(msg.message);
+        sprintf(msg.top, "Connected to MQTT!");
+        Serial.println(msg.top);
         xQueueSend(queue, &msg, portMAX_DELAY);
-        client.subscribe("test/server");
+
+        client.subscribe(lcd_topic.c_str());
       }
       else {
-        sprintf(msg.message, "Failed to connect");
-        Serial.println(String(msg.message) + ". Retrying in 5 seconds");
+        sprintf(msg.top, "Failed to connect");
+        Serial.println(String(msg.top) + ". Retrying in 5 seconds");
         xQueueSend(queue, &msg, portMAX_DELAY);
         vTaskDelay(pdMS_TO_TICKS(5000)); // Retry after 5 seconds
       }
@@ -196,10 +201,13 @@ void MQTTSubscribeTask(void *pvParameters) {
 void MQTTPublishTask(void *pvParameters) {
   while (true) {
     if (client.connected()) {
-      client.publish("game/players/1/connection", "1");
-      Serial.println("Message published to game/players/1/connection: 1");
+      Serial.println("Checkpoint 1");
+      client.publish(connection_topic.c_str(), "1");
+      Serial.println("Checkpoint 2");
+      Serial.println("Message published to " + connection_topic + ": 1");
     }
     vTaskDelay(pdMS_TO_TICKS(2000)); // Publish every 10 seconds
+    break;
   }
 }
 
@@ -209,12 +217,34 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
   // Write the message to the message buffer to display on the LCD
   Message msg;
-  if (length > maxLength)
-    memcpy(msg.message, "Message too long!", length = 17);
-  else
-    memcpy(msg.message, payload, length);
-  msg.message[length] = '\0'; // Null-terminate the message
-  msg.timeMs = 2000; // Display for 2 seconds
+  char buffer[256];
+
+  memcpy(buffer, payload, length);
+  buffer[length] = '\0';
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, buffer);
+
+  if (error) {
+    Serial.print("deserializeJson() returned ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  Serial.println("Message: " + String(buffer));
+
+  const char *top = doc["top"];
+  const char *down = doc["down"];
+  int timeMs = doc["time"];
+
+  sprintf(msg.top, "%s", top);
+  sprintf(msg.down, "%s", down);
+  msg.timeMs = timeMs;
+
+  Serial.println("Top: " + String(top));
+  Serial.println("Down: " + String(down));
+  Serial.println("Time: " + String(timeMs));
+
   xQueueSend(queue, &msg, portMAX_DELAY);
 }
 
@@ -246,13 +276,10 @@ void splitMessage(String sentence, String &message1, String &message2) {
   }
 }
 
-void printToLCD(LiquidCrystal_I2C &lcd, String msg) {
-  String message1;
-  String message2;
-  splitMessage(msg, message1, message2);
+void printToLCD(LiquidCrystal_I2C &lcd, String msgTop = "", String msgDown = "") {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print(message1);
+  lcd.print(msgTop);
   lcd.setCursor(0, 1);
-  lcd.print(message2);
+  lcd.print(msgDown);
 }
