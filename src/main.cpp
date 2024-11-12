@@ -10,6 +10,7 @@
 
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 
 
 // Pin definitions
@@ -96,6 +97,7 @@ void loop() {
 
 // Task functions
 void displayTask(void *pvParameters) {
+  client.subscribe("game/players/1/components/lcd");
   Message msg;
   while (true) {
     // Display message on LCD
@@ -169,7 +171,7 @@ void MQTTReconnectTask(void *pvParameters) {
         sprintf(msg.message, "Connected to MQTT!");
         Serial.println(msg.message);
         xQueueSend(queue, &msg, portMAX_DELAY);
-        client.subscribe("test/server"); // Subscribe to a test topic
+        client.subscribe("test/server");
       }
       else {
         sprintf(msg.message, "Failed to connect");
@@ -194,10 +196,10 @@ void MQTTSubscribeTask(void *pvParameters) {
 void MQTTPublishTask(void *pvParameters) {
   while (true) {
     if (client.connected()) {
-      client.publish("test/topic", "I'm ESP32");
-      Serial.println("Message published to test/topic: I'm ESP32");
+      client.publish("game/players/1/connection", "1");
+      Serial.println("Message published to game/players/1/connection: 1");
     }
-    vTaskDelay(pdMS_TO_TICKS(10000)); // Publish every 10 seconds
+    vTaskDelay(pdMS_TO_TICKS(2000)); // Publish every 10 seconds
   }
 }
 
