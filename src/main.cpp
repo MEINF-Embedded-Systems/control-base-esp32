@@ -28,6 +28,10 @@ TaskHandle_t displayTaskHandle = NULL;
 TaskHandle_t buzzTaskHandle = NULL;
 TaskHandle_t ledTaskHandle = NULL;
 TaskHandle_t buttonTaskHandle = NULL;
+TaskHandle_t WiFiTaskHandle = NULL;
+TaskHandle_t MQTTReconnectTaskHandle = NULL;
+TaskHandle_t MQTTSubscribeTaskHandle = NULL;
+TaskHandle_t MQTTPublishTaskHandle = NULL;
 
 // Task function declarations
 void displayTask(void *pvParameters);
@@ -46,11 +50,11 @@ void splitMessage(String sentence, String &message1, String &message2);
 void printToLCD(LiquidCrystal_I2C &lcd, String msgTop, String msgDown);
 
 // WiFi and MQTT
-const char *mqtt_server = "192.168.90.140";
+const char *mqtt_server = "172.20.10.9";
 unsigned int mqtt_port = 1883;
 
 // MQTT client
-const char *client_ID = "ESP32";
+const char *client_ID = "ESP32-1";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -90,7 +94,7 @@ void setup() {
   xTaskCreate(buttonTask, "Button Task", 2048, NULL, 1, &buttonTaskHandle);
 
   // Initialize Wi-Fi connection task
-  xTaskCreatePinnedToCore(WiFiTask, "WiFiTask", 4000, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(WiFiTask, "WiFiTask", 4000, NULL, 1, &WiFiTaskHandle, 0);
 
   // Set up MQTT server
   client.setServer(mqtt_server, mqtt_port);
@@ -186,12 +190,12 @@ void WiFiTask(void *pvParameters) {
   xQueueSend(queue, &msg, portMAX_DELAY);
 
   // Start MQTT tasks only after Wi-Fi is connected
-  xTaskCreatePinnedToCore(MQTTReconnectTask, "MQTTReconnectTask", 4000, NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(MQTTSubscribeTask, "MQTTSubscribeTask", 4000, NULL, 1, NULL, 1);
-  xTaskCreatePinnedToCore(MQTTPublishTask, "MQTTPublishTask", 4000, NULL, 1, NULL, 1);
+  xTaskCreate(MQTTReconnectTask, "MQTTReconnectTask", 4000, NULL, 1, &MQTTReconnectTaskHandle);
+  xTaskCreate(MQTTSubscribeTask, "MQTTSubscribeTask", 4000, NULL, 1, &MQTTSubscribeTaskHandle);
+  xTaskCreate(MQTTPublishTask, "MQTTPublishTask", 4000, NULL, 1, &MQTTPublishTaskHandle);
 
   // Delete WiFiTask to free resources
-  vTaskDelete(NULL); // NULL deletes the current task
+  vTaskDelete(WiFiTaskHandle); // NULL deletes the current task
 }
 
 // MQTT Reconnect Task: Reconnects to the MQTT broker if disconnected
