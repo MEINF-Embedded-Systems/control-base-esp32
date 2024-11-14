@@ -27,11 +27,13 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 TaskHandle_t displayTaskHandle = NULL;
 TaskHandle_t buzzTaskHandle = NULL;
 TaskHandle_t ledTaskHandle = NULL;
+TaskHandle_t buttonTaskHandle = NULL;
 
 // Task function declarations
 void displayTask(void *pvParameters);
 void buzzTask(void *pvParameters);
 void ledTask(void *pvParameters);
+void buttonTask(void *pvParameters);
 
 void WiFiTask(void *pvParameters);
 void MQTTReconnectTask(void *pvParameters);
@@ -44,7 +46,7 @@ void splitMessage(String sentence, String &message1, String &message2);
 void printToLCD(LiquidCrystal_I2C &lcd, String msgTop, String msgDown);
 
 // WiFi and MQTT
-const char *mqtt_server = "192.168.1.131";
+const char *mqtt_server = "192.168.90.140";
 unsigned int mqtt_port = 1883;
 
 // MQTT client
@@ -62,7 +64,7 @@ typedef struct {
   char top[maxLength + 1];
   char down[maxLength + 1];
   int timeMs = 500;
-} Message;
+} LCDMessage;
 
 String player_id = "1";
 String lcd_topic = "game/players/" + player_id + "/components/lcd";
@@ -70,7 +72,7 @@ String connection_topic = "game/players/" + player_id + "/connection";
 
 void setup() {
   Serial.begin(115200);
-  queue = xQueueCreate(maxMessages, sizeof(Message));
+  queue = xQueueCreate(maxMessages, sizeof(LCDMessage));
 
   Wire.begin(SDA_PIN, SCL_PIN);
   lcd.init();
@@ -85,6 +87,7 @@ void setup() {
   xTaskCreate(displayTask, "Display Task", 2048, NULL, 1, &displayTaskHandle);
   xTaskCreate(buzzTask, "Buzz Task", 2048, NULL, 1, &buzzTaskHandle);
   xTaskCreate(ledTask, "LED Task", 2048, NULL, 1, &ledTaskHandle);
+  xTaskCreate(buttonTask, "Button Task", 2048, NULL, 1, &buttonTaskHandle);
 
   // Initialize Wi-Fi connection task
   xTaskCreatePinnedToCore(WiFiTask, "WiFiTask", 4000, NULL, 1, NULL, 0);
@@ -103,19 +106,17 @@ void loop() {
 
 // Task functions
 void displayTask(void *pvParameters) {
-  Message msg;
+  LCDMessage msg;
   while (true) {
     // Display message on LCD
     if (uxQueueMessagesWaiting(queue) > 0) {
       xQueueReceive(queue, &msg, 0);
       printToLCD(lcd, msg.top, msg.down);
+      if (msg.timeMs > 0) {
+        vTaskDelay(pdMS_TO_TICKS(msg.timeMs));
+        lcd.clear();
+      }
     }
-    else {
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Waiting msg...");
-    }
-    vTaskDelay(pdMS_TO_TICKS(msg.timeMs)); // Small delay to avoid task overflow
   }
 }
 
@@ -139,9 +140,39 @@ void ledTask(void *pvParameters) {
   }
 }
 
+void buttonTask(void *pvParameters) {
+  const int SHORT_PRESS_TIME = 500; // 500 milliseconds
+  // Variables will change:
+  int lastState = LOW;  // the previous state from the input pin
+  int currentState;     // the current reading from the input pin
+  unsigned long pressedTime = 0;
+  unsigned long releasedTime = 0;
+  while (true) {
+    if (client.connected()) {
+      currentState = digitalRead(BUTTON_PIN);
+      if (lastState == HIGH && currentState == LOW)        // button is pressed
+        pressedTime = millis();
+      else if (lastState == LOW && currentState == HIGH) { // button is released
+        releasedTime = millis();
+
+        long pressDuration = releasedTime - pressedTime;
+
+        if (pressDuration < SHORT_PRESS_TIME)
+          Serial.println("A short press is detected");
+        else
+          Serial.println("A long press is detected");
+      }
+
+      // save the the last state
+      lastState = currentState;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
+
 // Wi-Fi Task: Handles connection to Wi-Fi
 void WiFiTask(void *pvParameters) {
-  Message msg;
+  LCDMessage msg;
   while (WiFi.status() != WL_CONNECTED) {
     sprintf(msg.top, "Connecting to Wi-Fi...");
     Serial.println(msg.top);
@@ -157,7 +188,7 @@ void WiFiTask(void *pvParameters) {
   // Start MQTT tasks only after Wi-Fi is connected
   xTaskCreatePinnedToCore(MQTTReconnectTask, "MQTTReconnectTask", 4000, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(MQTTSubscribeTask, "MQTTSubscribeTask", 4000, NULL, 1, NULL, 1);
-  // xTaskCreatePinnedToCore(MQTTPublishTask, "MQTTPublishTask", 4000, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(MQTTPublishTask, "MQTTPublishTask", 4000, NULL, 1, NULL, 1);
 
   // Delete WiFiTask to free resources
   vTaskDelete(NULL); // NULL deletes the current task
@@ -165,7 +196,7 @@ void WiFiTask(void *pvParameters) {
 
 // MQTT Reconnect Task: Reconnects to the MQTT broker if disconnected
 void MQTTReconnectTask(void *pvParameters) {
-  Message msg;
+  LCDMessage msg;
   while (true) {
     if (!client.connected()) {
       sprintf(msg.top, "Attempting MQTT connection...");
@@ -201,22 +232,19 @@ void MQTTSubscribeTask(void *pvParameters) {
 void MQTTPublishTask(void *pvParameters) {
   while (true) {
     if (client.connected()) {
-      Serial.println("Checkpoint 1");
       client.publish(connection_topic.c_str(), "1");
-      Serial.println("Checkpoint 2");
-      Serial.println("Message published to " + connection_topic + ": 1");
+      // Serial.println("LCDMessage published to " + connection_topic + ": 1");
     }
     vTaskDelay(pdMS_TO_TICKS(2000)); // Publish every 10 seconds
-    break;
   }
 }
 
 // Callback function to handle incoming messages
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
-  Serial.println("Message arrived on topic: " + String(topic));
+  Serial.println("LCDMessage arrived on topic: " + String(topic));
 
   // Write the message to the message buffer to display on the LCD
-  Message msg;
+  LCDMessage msg;
   char buffer[256];
 
   memcpy(buffer, payload, length);
@@ -231,7 +259,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     return;
   }
 
-  Serial.println("Message: " + String(buffer));
+  Serial.println("LCDMessage: " + String(buffer));
 
   const char *top = doc["top"];
   const char *down = doc["down"];
