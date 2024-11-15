@@ -49,8 +49,12 @@ void mqttCallback(char *topic, byte *payload, unsigned int length);
 void splitMessage(String sentence, String &message1, String &message2);
 void printToLCD(LiquidCrystal_I2C &lcd, String msgTop, String msgDown);
 
+// Handlers
+void handleTurnMesssage(const char *message);
+void handleLCDMessage(const char *message);
+
 // WiFi and MQTT
-const char *mqtt_server = "192.168.90.226";
+const char *mqtt_server = "192.168.68.140";
 unsigned int mqtt_port = 1883;
 
 // MQTT client
@@ -70,10 +74,16 @@ typedef struct {
   int timeMs = 500;
 } LCDMessage;
 
-String player_id = "1";
+String player_id = "2";
+
+// Game topics
 String lcd_topic = "game/players/" + player_id + "/components/lcd";
 String connection_topic = "game/players/" + player_id + "/connection";
 String button_topic = "game/players/" + player_id + "/components/button";
+String turn_topic = "game/players/" + player_id + "/turn";
+
+// Meeple topics
+String meeple_led_topic = "meeple/" + player_id + "/led";
 
 void setup() {
   Serial.begin(115200);
@@ -163,11 +173,11 @@ void buttonTask(void *pvParameters) {
 
         long pressDuration = releasedTime - pressedTime;
 
-        if (pressDuration < SHORT_PRESS_TIME){
+        if (pressDuration < SHORT_PRESS_TIME) {
           Serial.println("A short press is detected");
           client.publish(button_topic.c_str(), "short");
         }
-        else{
+        else {
           Serial.println("A long press is detected");
           client.publish(button_topic.c_str(), "long");
         }
@@ -232,8 +242,11 @@ void MQTTReconnectTask(void *pvParameters) {
 
 // MQTT Subscribe Task: Waits for incoming messages
 void MQTTSubscribeTask(void *pvParameters) {
+  client.subscribe(meeple_led_topic.c_str());
   while (true) {
-    if (client.connected()) client.loop();
+    if (client.connected()) {
+      client.loop();
+    }
     vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to avoid task overflow
   }
 }
@@ -251,15 +264,27 @@ void MQTTPublishTask(void *pvParameters) {
 
 // Callback function to handle incoming messages
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
-  Serial.println("LCDMessage arrived on topic: " + String(topic));
+  Serial.println("Something arrived on topic: " + String(topic));
 
-  // Write the message to the message buffer to display on the LCD
-  LCDMessage msg;
   char buffer[256];
-
   memcpy(buffer, payload, length);
   buffer[length] = '\0';
 
+  if (String(topic) == turn_topic) {
+    handleTurnMesssage(buffer);
+  }
+  else if (String(topic) == lcd_topic) {
+    handleLCDMessage(buffer);
+  }
+
+}
+
+void handleTurnMesssage(const char *buffer) {
+  client.publish(meeple_led_topic.c_str(), buffer);
+}
+
+void handleLCDMessage(const char *buffer) {
+  LCDMessage msg;
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, buffer);
 
