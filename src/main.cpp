@@ -52,9 +52,10 @@ void printToLCD(LiquidCrystal_I2C &lcd, String msgTop, String msgDown);
 // Handlers
 void handleTurnMesssage(const char *message);
 void handleLCDMessage(const char *message);
+void handleBuzzerMessage(const char *message);
 
 // WiFi and MQTT
-const char *mqtt_server = "192.168.68.140";
+const char *mqtt_server = "192.168.173.226";
 unsigned int mqtt_port = 1883;
 
 // MQTT client
@@ -67,6 +68,10 @@ const int maxMessages = 10;
 const int maxLength = 16; // LCD can display 16 characters per row
 QueueHandle_t queue;
 
+// Buzzer message
+const int maxTones = 20;
+QueueHandle_t buzzerQueue;
+
 // Define a struct to hold the message and display time
 typedef struct {
   char top[maxLength + 1];
@@ -74,13 +79,19 @@ typedef struct {
   int timeMs = 500;
 } LCDMessage;
 
-String player_id = "2";
+typedef struct {
+  int tones[20];
+  int duration[20];
+} BuzzerMessage;
+
+String player_id = "1";
 
 // Game topics
 String lcd_topic = "game/players/" + player_id + "/components/lcd";
 String connection_topic = "game/players/" + player_id + "/connection";
 String button_topic = "game/players/" + player_id + "/components/button";
 String turn_topic = "game/players/" + player_id + "/turn";
+String buzzer_topic = "game/players/" + player_id + "/components/buzzer";
 
 // Meeple topics
 String meeple_led_topic = "meeple/" + player_id + "/led";
@@ -88,6 +99,7 @@ String meeple_led_topic = "meeple/" + player_id + "/led";
 void setup() {
   Serial.begin(115200);
   queue = xQueueCreate(maxMessages, sizeof(LCDMessage));
+  buzzerQueue = xQueueCreate(maxTones, sizeof(BuzzerMessage));
 
   Wire.begin(SDA_PIN, SCL_PIN);
   lcd.init();
@@ -136,13 +148,25 @@ void displayTask(void *pvParameters) {
 }
 
 void buzzTask(void *pvParameters) {
+  BuzzerMessage msg;
   while (true) {
     // tone(BUZZ_PIN, 500);
     // vTaskDelay(pdMS_TO_TICKS(2000));
 
     // noTone(BUZZ_PIN);
     // vTaskDelay(pdMS_TO_TICKS(2000));
-    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    if (uxQueueMessagesWaiting(buzzerQueue) > 0) {
+      xQueueReceive(buzzerQueue, &msg, 0);
+      for (int i = 0; i < maxTones; i++) {
+        if (msg.tones[i] == 0) break;
+        tone(BUZZ_PIN, msg.tones[i]);
+        vTaskDelay(pdMS_TO_TICKS(msg.duration[i]));
+        noTone(BUZZ_PIN);
+        vTaskDelay(pdMS_TO_TICKS(100));
+      }
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -173,14 +197,12 @@ void buttonTask(void *pvParameters) {
 
         long pressDuration = releasedTime - pressedTime;
 
-        if (pressDuration < SHORT_PRESS_TIME) {
-          Serial.println("A short press is detected");
-          client.publish(button_topic.c_str(), "short");
-        }
-        else {
-          Serial.println("A long press is detected");
-          client.publish(button_topic.c_str(), "long");
-        }
+        JsonDocument doc;
+        doc["type"] = pressDuration < SHORT_PRESS_TIME ? "short" : "long";
+        doc["duration"] = pressDuration;
+        char buffer[256];
+        serializeJson(doc, buffer);
+        client.publish(button_topic.c_str(), buffer);
       }
 
       // save the the last state
@@ -276,6 +298,9 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   else if (String(topic) == lcd_topic) {
     handleLCDMessage(buffer);
   }
+  else if (String(topic) == buzzer_topic) {
+    handleBuzzerMessage(buffer);
+  }
 
 }
 
@@ -341,4 +366,28 @@ void printToLCD(LiquidCrystal_I2C &lcd, String msgTop = "", String msgDown = "")
   lcd.print(msgTop);
   lcd.setCursor(0, 1);
   lcd.print(msgDown);
+}
+
+void handleBuzzerMessage(const char *buffer) {
+  BuzzerMessage msg;
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, buffer);
+
+  if (error) {
+    Serial.print("deserializeJson() returned ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  Serial.println("BuzzerMessage: " + String(buffer));
+
+  JsonArray tones = doc["tones"];
+  JsonArray duration = doc["duration"];
+
+  for (int i = 0; i < tones.size(); i++) {
+    msg.tones[i] = tones[i];
+    msg.duration[i] = duration[i];
+  }
+
+  xQueueSend(buzzerQueue, &msg, portMAX_DELAY);
 }
