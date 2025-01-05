@@ -161,9 +161,8 @@ void buzzTask(void *pvParameters) {
       for (int i = 0; i < maxTones; i++) {
         if (msg.tones[i] == 0) break;
         tone(BUZZ_PIN, msg.tones[i]);
-        vTaskDelay(pdMS_TO_TICKS(msg.duration[i]));
+        vTaskDelay(pdMS_TO_TICKS(msg.duration[i]) * 1.3);
         noTone(BUZZ_PIN);
-        vTaskDelay(pdMS_TO_TICKS(100));
       }
     }
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -250,6 +249,7 @@ void MQTTReconnectTask(void *pvParameters) {
         xQueueSend(queue, &msg, portMAX_DELAY);
 
         client.subscribe(lcd_topic.c_str());
+        client.subscribe(buzzer_topic.c_str());
       }
       else {
         sprintf(msg.top, "Failed to connect");
