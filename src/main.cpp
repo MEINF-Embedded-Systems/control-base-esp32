@@ -54,8 +54,10 @@ void handleTurnMesssage(const char *message);
 void handleLCDMessage(const char *message);
 void handleBuzzerMessage(const char *message);
 
+String player_id = "1";
+
 // WiFi and MQTT
-const char *mqtt_server = "192.168.173.226";
+const char *mqtt_server = "192.168.173.140";
 unsigned int mqtt_port = 1883;
 
 // MQTT client
@@ -83,8 +85,6 @@ typedef struct {
   int tones[20];
   int duration[20];
 } BuzzerMessage;
-
-String player_id = "1";
 
 // Game topics
 String lcd_topic = "game/players/" + player_id + "/components/lcd";
