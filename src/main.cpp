@@ -57,7 +57,7 @@ void handleBuzzerMessage(const char *message);
 unsigned int player_id = 1;
 
 // WiFi and MQTT
-const char *mqtt_server = "192.168.173.226";
+const char *mqtt_server = "80.102.7.215";
 unsigned int mqtt_port = 1883;
 
 // MQTT client
@@ -144,6 +144,7 @@ void displayTask(void *pvParameters) {
         lcd.clear();
       }
     }
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
