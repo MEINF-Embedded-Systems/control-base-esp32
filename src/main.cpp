@@ -54,14 +54,14 @@ void handleTurnMesssage(const char *message);
 void handleLCDMessage(const char *message);
 void handleBuzzerMessage(const char *message);
 
-String player_id = "1";
+unsigned int player_id = 1;
 
 // WiFi and MQTT
-const char *mqtt_server = "192.168.173.140";
+const char *mqtt_server = "192.168.173.226";
 unsigned int mqtt_port = 1883;
 
 // MQTT client
-const char *client_ID = "ESP32-1";
+String client_ID = "ESP32-" + String(player_id);
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -87,14 +87,14 @@ typedef struct {
 } BuzzerMessage;
 
 // Game topics
-String lcd_topic = "game/players/" + player_id + "/components/lcd";
-String connection_topic = "game/players/" + player_id + "/connection";
-String button_topic = "game/players/" + player_id + "/components/button";
-String turn_topic = "game/players/" + player_id + "/turn";
-String buzzer_topic = "game/players/" + player_id + "/components/buzzer";
+String lcd_topic = "game/players/" + String(player_id) + "/components/lcd";
+String connection_topic = "game/players/" + String(player_id) + "/connection";
+String button_topic = "game/players/" + String(player_id) + "/components/button";
+String turn_topic = "game/players/" + String(player_id) + "/turn";
+String buzzer_topic = "game/players/" + String(player_id) + "/components/buzzer";
 
 // Meeple topics
-String meeple_led_topic = "meeple/" + player_id + "/led";
+String meeple_led_topic = "meeple/" + String(player_id) + "/led";
 
 void setup() {
   Serial.begin(115200);
@@ -243,7 +243,7 @@ void MQTTReconnectTask(void *pvParameters) {
       sprintf(msg.top, "Attempting MQTT connection...");
       Serial.println(msg.top);
       xQueueSend(queue, &msg, portMAX_DELAY);
-      if (client.connect(client_ID)) {
+      if (client.connect(client_ID.c_str())) {
         sprintf(msg.top, "Connected to MQTT!");
         Serial.println(msg.top);
         xQueueSend(queue, &msg, portMAX_DELAY);
