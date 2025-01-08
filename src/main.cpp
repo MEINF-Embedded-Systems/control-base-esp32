@@ -66,11 +66,12 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 // LCD message
-const int maxMessages = 10;
+const int maxLCDMessages = 30;
 const int maxLength = 16; // LCD can display 16 characters per row
 QueueHandle_t queue;
 
 // Buzzer message
+const int maxBuzzerMessages = 30;
 const int maxTones = 20;
 QueueHandle_t buzzerQueue;
 
@@ -98,8 +99,8 @@ String meeple_led_topic = "meeple/" + String(player_id) + "/led";
 
 void setup() {
   Serial.begin(115200);
-  queue = xQueueCreate(maxMessages, sizeof(LCDMessage));
-  buzzerQueue = xQueueCreate(maxTones, sizeof(BuzzerMessage));
+  queue = xQueueCreate(maxLCDMessages, sizeof(LCDMessage));
+  buzzerQueue = xQueueCreate(maxBuzzerMessages, sizeof(BuzzerMessage));
 
   Wire.begin(SDA_PIN, SCL_PIN);
   lcd.init();
@@ -111,13 +112,13 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
 
   // Create tasks
-  xTaskCreate(displayTask, "Display Task", 2048, NULL, 1, &displayTaskHandle);
-  xTaskCreate(buzzTask, "Buzz Task", 2048, NULL, 1, &buzzTaskHandle);
-  xTaskCreate(ledTask, "LED Task", 2048, NULL, 1, &ledTaskHandle);
-  xTaskCreate(buttonTask, "Button Task", 2048, NULL, 1, &buttonTaskHandle);
+  xTaskCreate(displayTask, "Display Task", 1024 * 2, NULL, 1, &displayTaskHandle);
+  xTaskCreate(buzzTask, "Buzz Task", 1024 * 3, NULL, 1, &buzzTaskHandle);
+  xTaskCreate(ledTask, "LED Task", 1024 * 2, NULL, 1, &ledTaskHandle);
+  xTaskCreate(buttonTask, "Button Task", 1024 * 3, NULL, 1, &buttonTaskHandle);
 
   // Initialize Wi-Fi connection task
-  xTaskCreatePinnedToCore(WiFiTask, "WiFiTask", 4000, NULL, 1, &WiFiTaskHandle, 0);
+  xTaskCreatePinnedToCore(WiFiTask, "WiFiTask", 1024 * 4, NULL, 1, &WiFiTaskHandle, 0);
 
   // Set up MQTT server
   client.setServer(mqtt_server, mqtt_port);
