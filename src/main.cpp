@@ -54,10 +54,10 @@ void handleTurnMesssage(const char *message);
 void handleLCDMessage(const char *message);
 void handleBuzzerMessage(const char *message);
 
-unsigned int player_id = 1;
+unsigned int player_id = 2;
 
 // WiFi and MQTT
-const char *mqtt_server = "80.102.7.215";
+const char *mqtt_server = "192.168.25.140";
 unsigned int mqtt_port = 1883;
 
 // MQTT client
@@ -87,14 +87,20 @@ typedef struct {
   int duration[20];
 } BuzzerMessage;
 
+int led_value = 0;
+bool meepleConnected = false;
+
 // Game topics
+// Components
 String lcd_topic = "game/players/" + String(player_id) + "/components/lcd";
 String connection_topic = "game/players/" + String(player_id) + "/connection";
 String button_topic = "game/players/" + String(player_id) + "/components/button";
-String turn_topic = "game/players/" + String(player_id) + "/turn";
 String buzzer_topic = "game/players/" + String(player_id) + "/components/buzzer";
 
+String turn_topic = "game/players/" + String(player_id) + "/turn";
+
 // Meeple topics
+String meeple_connection_topic = "meeple/" + String(player_id) + "/connection";
 String meeple_led_topic = "meeple/" + String(player_id) + "/led";
 
 void setup() {
@@ -152,12 +158,6 @@ void displayTask(void *pvParameters) {
 void buzzTask(void *pvParameters) {
   BuzzerMessage msg;
   while (true) {
-    // tone(BUZZ_PIN, 500);
-    // vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // noTone(BUZZ_PIN);
-    // vTaskDelay(pdMS_TO_TICKS(2000));
-
     if (uxQueueMessagesWaiting(buzzerQueue) > 0) {
       xQueueReceive(buzzerQueue, &msg, 0);
       for (int i = 0; i < maxTones; i++) {
@@ -173,11 +173,8 @@ void buzzTask(void *pvParameters) {
 
 void ledTask(void *pvParameters) {
   while (true) {
-    digitalWrite(LED_PIN, HIGH);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-
-    digitalWrite(LED_PIN, LOW);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    digitalWrite(LED_PIN, led_value);
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -252,6 +249,8 @@ void MQTTReconnectTask(void *pvParameters) {
 
         client.subscribe(lcd_topic.c_str());
         client.subscribe(buzzer_topic.c_str());
+        client.subscribe(turn_topic.c_str());
+        client.subscribe(meeple_connection_topic.c_str());
       }
       else {
         sprintf(msg.top, "Failed to connect");
@@ -266,7 +265,6 @@ void MQTTReconnectTask(void *pvParameters) {
 
 // MQTT Subscribe Task: Waits for incoming messages
 void MQTTSubscribeTask(void *pvParameters) {
-  client.subscribe(meeple_led_topic.c_str());
   while (true) {
     if (client.connected()) {
       client.loop();
@@ -278,9 +276,8 @@ void MQTTSubscribeTask(void *pvParameters) {
 // MQTT Publish Task: Publishes a message every 10 seconds
 void MQTTPublishTask(void *pvParameters) {
   while (true) {
-    if (client.connected()) {
+    if (client.connected() and meepleConnected) {
       client.publish(connection_topic.c_str(), "1");
-      // Serial.println("LCDMessage published to " + connection_topic + ": 1");
     }
     vTaskDelay(pdMS_TO_TICKS(2000)); // Publish every 10 seconds
   }
@@ -297,6 +294,9 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   if (String(topic) == turn_topic) {
     handleTurnMesssage(buffer);
   }
+  else if (String(topic) == meeple_connection_topic) {
+    meepleConnected = bool(atoi(buffer));
+  }
   else if (String(topic) == lcd_topic) {
     handleLCDMessage(buffer);
   }
@@ -307,6 +307,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 }
 
 void handleTurnMesssage(const char *buffer) {
+  led_value = atoi(buffer);
   client.publish(meeple_led_topic.c_str(), buffer);
 }
 
