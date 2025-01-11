@@ -25,6 +25,8 @@ Dependencies will be automatically installed when you build the project for the 
 - Click on the "Library" button in the PlatformIO sidebar.
 - Search for the following libraries and install them:
   - `LiquidCrystal_I2C` by Frank de Brabander
+  - `ArduinoJson` by Benoit Blanchon
+  - `PubSubClient` by Nick O'Leary
 
 ### Wifi Configuration
 - When cloning the project, a file `src/config_example.h` will be created.
